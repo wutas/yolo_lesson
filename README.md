@@ -7,6 +7,8 @@
 pip install -r requirements.txt
 ```
 
+Обучлите модель в ноутбуке: yolov8_persons
+
 Используйте терминальный запуск скприта:
 
 ```
