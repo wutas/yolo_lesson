@@ -18,4 +18,4 @@ python webcam_yolov8_ultra.py --model runs/detect/train/weights/best.pt --device
 
 model - путь до весов модели в формте .pt
 
-device - на чем будет идати расчет: cuda (GPU), cpu (процессор) или mps (M... процессор от Apple)
+device - на чем будет идти расчет: cuda (GPU), cpu (процессор) или mps (M... процессор от Apple)
