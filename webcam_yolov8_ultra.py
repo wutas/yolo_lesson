@@ -35,25 +35,40 @@ class YOLOv8Detector:
         return frame
 
 
-class WebcamYOLOv8:
-    def __init__(self, model_path, device='cpu'):
+class RTSPYOLOv8:
+    def __init__(self, model_path, rtsp_url, device='cpu'):
         self.detector = YOLOv8Detector(model_path, device)
-        self.cap = cv2.VideoCapture(0)
+        self.rtsp_url = rtsp_url
+        
+        # Настройка параметров для стабильного RTSP-соединения
+        self.cap = cv2.VideoCapture(self.rtsp_url)
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Уменьшаем буфер кадров
+        self.cap.set(cv2.CAP_PROP_FPS, 15)         # Ограничиваем FPS для Jetson
 
     def start(self):
         if not self.cap.isOpened():
-            print("Error: Could not open webcam.")
+            print(f"Error: Could not open RTSP stream: {self.rtsp_url}")
             return
 
+        print(f"Successfully connected to RTSP stream: {self.rtsp_url}")
+        
         while True:
             ret, frame = self.cap.read()
             if not ret:
-                break
+                print("Error reading frame. Reconnecting...")
+                # Попытка переподключения
+                self.cap.release()
+                self.cap = cv2.VideoCapture(self.rtsp_url)
+                if not self.cap.isOpened():
+                    print("Reconnection failed. Exiting.")
+                    break
+                continue
 
+            # Обработка кадра
             results = self.detector.detect(frame)
             frame = self.detector.draw_detections(frame, results)
 
-            cv2.imshow('YOLOv8 Detection', frame)
+            cv2.imshow('YOLOv8 RTSP Detection', frame)
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
@@ -62,15 +77,16 @@ class WebcamYOLOv8:
         cv2.destroyAllWindows()
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='YOLOv8 Webcam Detection')
+    parser = argparse.ArgumentParser(description='YOLOv8 RTSP Detection')
     parser.add_argument('--model', type=str, required=True, help='Path to the YOLOv8 model file')
-    parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'mps'], help='Device to run the model on (cpu, cuda or Apple Sil.)')
+    parser.add_argument('--rtsp', type=str, required=True, help='RTSP stream URL')
+    parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'mps'], help='Device to run the model on')
     
     args = parser.parse_args()
     
-    model_path = args.model
-    device = args.device
-    
-    webcam_yolov8 = WebcamYOLOv8(model_path, device)
-    webcam_yolov8.start()
-
+    rtsp_yolov8 = RTSPYOLOv8(
+        model_path=args.model,
+        rtsp_url=args.rtsp,
+        device=args.device
+    )
+    rtsp_yolov8.start()
