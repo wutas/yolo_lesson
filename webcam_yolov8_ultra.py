@@ -17,58 +17,80 @@ class YOLOv8Detector:
         return results
 
     def draw_detections(self, frame, results):
+        if not results:
+            return frame
+
         height_ratio = self.original_shape[0] / self.imgsz
         width_ratio = self.original_shape[1] / self.imgsz
 
         for detection in results:
-            for bbox in detection.boxes.xyxy:
-                x1, y1, x2, y2 = map(int, bbox)
+            if detection.boxes is None:
+                continue
+
+            for box in detection.boxes:
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
                 x1 = int(x1 * width_ratio)
                 y1 = int(y1 * height_ratio)
                 x2 = int(x2 * width_ratio)
                 y2 = int(y2 * height_ratio)
-                conf = detection.boxes.conf[0]
-                cls = detection.boxes.cls[0]
-                label = f'{self.model.names[int(cls)]} {conf:.2f}'
+
+                conf = float(box.conf[0]) if box.conf is not None else 0.0
+                cls_idx = int(box.cls[0]) if box.cls is not None else -1
+
+                label_name = str(cls_idx)
+                if isinstance(self.model.names, dict):
+                    label_name = self.model.names.get(cls_idx, label_name)
+                elif isinstance(self.model.names, list) and 0 <= cls_idx < len(self.model.names):
+                    label_name = self.model.names[cls_idx]
+
+                label = f'{label_name} {conf:.2f}'
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
         return frame
 
 
-class RTSPYOLOv8:
-    def __init__(self, model_path, rtsp_url, device='cpu'):
+class VideoYOLOv8:
+    def __init__(self, model_path, source, device='cpu', is_rtsp=False):
         self.detector = YOLOv8Detector(model_path, device)
-        self.rtsp_url = rtsp_url
-        
-        # Настройка параметров для стабильного RTSP-соединения
-        self.cap = cv2.VideoCapture(self.rtsp_url)
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Уменьшаем буфер кадров
-        self.cap.set(cv2.CAP_PROP_FPS, 15)         # Ограничиваем FPS для Jetson
+        self.source = source
+        self.is_rtsp = is_rtsp
+
+        self.cap = cv2.VideoCapture(self.source)
+
+        if self.is_rtsp:
+            # Настраиваем параметры для более стабильного RTSP потока
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            self.cap.set(cv2.CAP_PROP_FPS, 15)
 
     def start(self):
         if not self.cap.isOpened():
-            print(f"Error: Could not open RTSP stream: {self.rtsp_url}")
+            print(f"Error: Could not open video source: {self.source}")
             return
 
-        print(f"Successfully connected to RTSP stream: {self.rtsp_url}")
+        source_type = "RTSP stream" if self.is_rtsp else "camera"
+        print(f"Successfully connected to {source_type}: {self.source}")
         
         while True:
             ret, frame = self.cap.read()
             if not ret:
                 print("Error reading frame. Reconnecting...")
-                # Попытка переподключения
-                self.cap.release()
-                self.cap = cv2.VideoCapture(self.rtsp_url)
-                if not self.cap.isOpened():
-                    print("Reconnection failed. Exiting.")
+                if self.is_rtsp:
+                    # Попытка переподключения к RTSP
+                    self.cap.release()
+                    self.cap = cv2.VideoCapture(self.source)
+                    if not self.cap.isOpened():
+                        print("Reconnection failed. Exiting.")
+                        break
+                    continue
+                else:
+                    print("Unable to read from camera. Exiting.")
                     break
-                continue
 
             # Обработка кадра
             results = self.detector.detect(frame)
             frame = self.detector.draw_detections(frame, results)
 
-            cv2.imshow('YOLOv8 RTSP Detection', frame)
+            cv2.imshow('YOLOv8 Detection', frame)
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
@@ -77,16 +99,21 @@ class RTSPYOLOv8:
         cv2.destroyAllWindows()
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='YOLOv8 RTSP Detection')
+    parser = argparse.ArgumentParser(description='YOLOv8 video detection')
     parser.add_argument('--model', type=str, required=True, help='Path to the YOLOv8 model file')
-    parser.add_argument('--rtsp', type=str, required=True, help='RTSP stream URL')
+    parser.add_argument('--rtsp', type=str, help='RTSP stream URL')
+    parser.add_argument('--camera', type=int, default=0, help='Index of the local camera to use when RTSP is not set')
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'mps'], help='Device to run the model on')
     
     args = parser.parse_args()
-    
-    rtsp_yolov8 = RTSPYOLOv8(
+
+    source = args.rtsp if args.rtsp else args.camera
+    is_rtsp = args.rtsp is not None
+
+    video_detector = VideoYOLOv8(
         model_path=args.model,
-        rtsp_url=args.rtsp,
-        device=args.device
+        source=source,
+        device=args.device,
+        is_rtsp=is_rtsp
     )
-    rtsp_yolov8.start()
+    video_detector.start()

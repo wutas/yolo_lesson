@@ -31,10 +31,13 @@
 ```bash
 uv run python webcam_yolov8_ultra.py \
   --model runs/detect/train/weights/best.pt \
+  --camera 0 \
   --device mps
 ```
 
-- `--model` — путь к весам модели в формате `.pt`.
+- `--model` — путь к весам модели в формате `.pt`;
+- `--camera` — индекс локальной камеры (`0` по умолчанию);
+- `--rtsp` — адрес RTSP-потока (если используете IP-камеру);
 - `--device` — устройство расчёта: `cuda` (GPU), `cpu`, либо `mps` (Apple Silicon).
 
 ## Jetson
